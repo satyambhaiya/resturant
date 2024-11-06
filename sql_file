@@ -1,0 +1,134 @@
+import sqlite3
+from datetime import datetime
+
+class RestaurantManagementSystem:
+    def __init__(self, db_name='restaurant.db'):
+        self.conn = sqlite3.connect(db_name)
+        self.cursor = self.conn.cursor()
+        self.create_tables()
+
+    def create_tables(self):
+        # Create tables for menu items, orders, and customers
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS menu_items (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                price REAL NOT NULL,
+                category TEXT NOT NULL
+            )
+        ''')
+
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY,
+                customer_id INTEGER,
+                order_date DATETIME NOT NULL,
+                total_amount REAL NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers (id)
+            )
+        ''')
+
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY,
+                order_id INTEGER,
+                menu_item_id INTEGER,
+                quantity INTEGER NOT NULL,
+                FOREIGN KEY (order_id) REFERENCES orders (id),
+                FOREIGN KEY (menu_item_id) REFERENCES menu_items (id)
+            )
+        ''')
+
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT
+            )
+        ''')
+
+        self.conn.commit()
+
+    def add_menu_item(self, name, price, category):
+        self.cursor.execute('''
+            INSERT INTO menu_items (name, price, category)
+            VALUES (?, ?, ?)
+        ''', (name, price, category))
+        self.conn.commit()
+
+    def add_customer(self, name, phone, email):
+        self.cursor.execute('''
+            INSERT INTO customers (name, phone, email)
+            VALUES (?, ?, ?)
+        ''', (name, phone, email))
+        self.conn.commit()
+
+    def create_order(self, customer_id, items):
+        # items should be a list of tuples: (menu_item_id, quantity)
+        order_date = datetime.now()
+        total_amount = self.calculate_total(items)
+
+        self.cursor.execute('''
+            INSERT INTO orders (customer_id, order_date, total_amount)
+            VALUES (?, ?, ?)
+        ''', (customer_id, order_date, total_amount))
+        order_id = self.cursor.lastrowid
+
+        for item_id, quantity in items:
+            self.cursor.execute('''
+                INSERT INTO order_items (order_id, menu_item_id, quantity)
+                VALUES (?, ?, ?)
+            ''', (order_id, item_id, quantity))
+
+        self.conn.commit()
+
+    def calculate_total(self, items):
+        total = 0
+        for item_id, quantity in items:
+            self.cursor.execute('SELECT price FROM menu_items WHERE id = ?', (item_id,))
+            price = self.cursor.fetchone()[0]
+            total += price * quantity
+        return total
+
+    def get_menu(self):
+        self.cursor.execute('SELECT * FROM menu_items')
+        return self.cursor.fetchall()
+
+    def get_orders(self):
+        self.cursor.execute('''
+            SELECT o.id, c.name, o.order_date, o.total_amount
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.id
+        ''')
+        return self.cursor.fetchall()
+
+    def close(self):
+        self.conn.close()
+
+# Example usage
+if __name__ == '__main__':
+    rms = RestaurantManagementSystem()
+
+    # Add menu items
+    rms.add_menu_item("Burger", 9.99, "Main")
+    rms.add_menu_item("Fries", 3.99, "Side")
+    rms.add_menu_item("Soda", 1.99, "Drink")
+
+    # Add a customer
+    rms.add_customer("John Doe", "555-1234", "john@example.com")
+
+    # Create an order
+    rms.create_order(1, [(1, 2), (2, 1), (3, 2)])
+
+    # Get menu
+    print("Menu:")
+    for item in rms.get_menu():
+        print(f"{item[1]} - ${item[2]:.2f}")
+
+    # Get orders
+    print("\nOrders:")
+    for order in rms.get_orders():
+        print(f"Order #{order[0]} - {order[1]} - {order[2]} - ${order[3]:.2f}")
+
+    rms.close()
